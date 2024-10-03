@@ -9,6 +9,12 @@ pub async fn health_check() -> StatusCode {
     StatusCode::OK
 }
 
+#[tokio::test]
+async fn health_check_works() {
+    let status_code = health_check().await;
+    assert_eq!(status_code, StatusCode::OK);
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // ルーター
