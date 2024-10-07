@@ -18,3 +18,4 @@ impl HealthCheckRepository for HealthCheckRepositoryImpl {
             .is_ok()
     }
 }
+
