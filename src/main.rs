@@ -1,92 +1,62 @@
-use std::net::{Ipv4Addr, SocketAddr};
-
-use anyhow::Result;
-use axum::{extract::State, http::StatusCode, routing::get, Router};
-use sqlx::{postgres::PgConnectOptions, PgPool};
-use tokio::net::TcpListener;
-
-/// データベースの接続設定
-struct DatabaseConig {
-    pub host: String,
-    pub port: u16,
-    pub username: String,
-    pub password: String,
-    pub database: String,
+struct Configuration {
+    retry: u32,
+    timeout: u32,
 }
 
-impl From<DatabaseConig> for PgConnectOptions {
-    fn from(cfg: DatabaseConig) -> Self {
-        Self::new()
-            .host(&cfg.host)
-            .port(cfg.port)
-            .username(&cfg.username)
-            .password(&cfg.password)
-            .database(&cfg.database)
+trait RequestClient {
+    fn send(&self);
+}
+
+struct GrpcRequestClient {
+    config: Configuration,
+}
+
+impl RequestClient for GrpcRequestClient {
+    fn send(&self) {
+        println!("Sent request by gRPC");
     }
 }
 
-/// postgresl用のコネクションプール
-fn connect_database_with(cfg: DatabaseConig) -> PgPool {
-    PgPool::connect_lazy_with(cfg.into())
+struct HttpRequestClient {
+    config: Configuration,
 }
 
-/// ヘルスチェック用のハンドラ
-pub async fn health_check() -> StatusCode {
-    StatusCode::OK
-}
-
-/// DBのヘルスチェックを行うハンドラ
-async fn health_check_db(State(db): State<PgPool>) -> StatusCode {
-    let connection_result = sqlx::query("SELECT 1").fetch_one(&db).await;
-    match connection_result {
-        Ok(_) => StatusCode::OK,
-        Err(_) => StatusCode::INTERNAL_SERVER_ERROR,
+impl RequestClient for HttpRequestClient {
+    fn send(&self) {
+        println!("Sent request by HTTP");
     }
 }
 
-// ===== TEST =====
-#[tokio::test]
-async fn health_check_works() {
-    let status_code = health_check().await;
-    assert_eq!(status_code, StatusCode::OK);
+struct Service {
+    client: Box<dyn RequestClient>,
 }
 
-#[sqlx::test]
-async fn health_check_db_works(pool: sqlx::PgPool) {
-    let status_code = health_check_db(State(pool)).await;
-    assert_eq!(status_code, StatusCode::OK);
+impl Service {
+    fn call(&self) {
+        self.client.send();
+    }
 }
 
-// ===== MAIN =====
-#[tokio::main]
-async fn main() -> Result<()> {
-    // DBの設定
-    let database_cfg = DatabaseConig {
-        host: "localhost".into(),
-        port: 5432,
-        username: "app".into(),
-        password: "passwd".into(),
-        database: "app".into(),
+fn main() {
+    // via gRPC
+    let config = Configuration {
+        retry: 3,
+        timeout: 30,
     };
+    let grpc_client = GrpcRequestClient { config };
+    let grpc_service = Service {
+        client: Box::new(grpc_client),
+    };
+    grpc_service.call();
 
-    // コネクションプールを作る
-    let conn_pool = connect_database_with(database_cfg);
-
-    // ルーター
-    let app = Router::new()
-        .route("/health", get(health_check))
-        .route("/health/db", get(health_check_db))
-        .with_state(conn_pool);
-
-    // ローカルホストの8080番
-    let addr = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 8080);
-
-    // リスナーを立ち上げる
-    let listener = TcpListener::bind(addr).await?;
-
-    // ログを出力する
-    println!("Listening on {}", addr);
-
-    // サーバーを起動する
-    Ok(axum::serve(listener, app).await?)
+    // via HTTP
+    let config = Configuration {
+        retry: 3,
+        timeout: 60,
+    };
+    let http_client = HttpRequestClient { config };
+    let http_service = Service {
+        client: Box::new(http_client),
+    };
+    http_service.call();
 }
