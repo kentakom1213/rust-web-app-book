@@ -8,8 +8,3 @@ shared.workspace = true
 async-trait.workspace = true
 anyhow.workspace = true
 uuid.workspace = true
-
-[workspace.dependencies]
-uuid = { version = "1.4.0", features = ["v4", "serde"] }
-serde = { version = "1.0.174", features = ["derive"] }
-thiserror = "1.0.44"
